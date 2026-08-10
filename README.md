@@ -42,7 +42,7 @@ This integration is built to be installed via **HACS** (Home Assistant Community
 
 1. Open HACS in Home Assistant.
 2. Click the three dots in the top right corner and select **Custom repositories**.
-3. Add this repository's URL (`https://github.com/your-username/ha-kinetico-powerline`) and choose **Integration** as the category.
+3. Add this repository's URL (`https://github.com/highamperage/ha-kinetico-powerline`) and choose **Integration** as the category.
 4. Click **Add** and then download the integration.
 5. Restart Home Assistant.
 6. Go to **Settings > Devices & Services > Add Integration** and search for "Kinetico Powerline".
@@ -55,8 +55,7 @@ If you have set a custom PIN in the Kinetico app, you will need to provide it du
 
 ## Requirements
 
-- **BLE adapter**: Any Bluetooth 4.0+ adapter (built-in laptop BT works, or a
-  USB dongle like Asus BT-500 for your HA server)
+- **BLE adapter**: Any Bluetooth 4.0+ adapter
 - **Python 3.10+**
 - **bleak** (BLE library, installed automatically by HA)
 
