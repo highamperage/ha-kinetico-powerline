@@ -35,7 +35,6 @@ Android app.
 - Trigger regeneration (now / next scheduled)
 - Set salt level
 - Sync clock
-- Adjust hardness, capacity, efficiency settings
 
 ## Installation
 
