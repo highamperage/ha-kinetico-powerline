@@ -1,0 +1,23 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    name: Prepare release asset
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Zip custom_components
+        run: |
+          cd custom_components/kinetico_powerline
+          zip kinetico_powerline.zip -r ./
+
+      - name: Upload zip to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: custom_components/kinetico_powerline/kinetico_powerline.zip
