@@ -150,7 +150,13 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
             
             # Send Advanced Settings request first (v packet)
             await client.write_gatt_char(uart["tx_char"], cmd_advanced_settings(), response=False)
-            await asyncio.sleep(0.5)
+            
+            # Wait briefly for settings response
+            try:
+                await asyncio.wait_for(self._response_event.wait(), timeout=1.0)
+                self._response_event.clear()
+            except asyncio.TimeoutError:
+                _LOGGER.debug("Timeout waiting for advanced settings response")
             
             # Send Dashboard request (u packets)
             await client.write_gatt_char(uart["tx_char"], cmd_dashboard(), response=False)

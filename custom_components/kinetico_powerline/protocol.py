@@ -515,8 +515,8 @@ def parse_dashboard_packets(
 
         # Dashboard 1 (u,u,1, packet type ':')
         elif data[0] == 0x75 and data[1] == 0x75 and data[2] == 0x01 and data[19] == 0x3A:
-            result.days_until_regen = unsigned_byte(data[3])
-            result.days_since_regen = unsigned_byte(data[4])
+            result.days_since_regen = unsigned_byte(data[3])
+            result.days_until_regen = unsigned_byte(data[4])
             result.capacity_remaining_percent = unsigned_byte(data[5])
             result.has_error = (data[7] != 0)
             if firmware_version >= 210:
