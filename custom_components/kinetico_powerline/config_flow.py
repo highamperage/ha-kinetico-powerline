@@ -55,17 +55,20 @@ class KineticoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Confirm discovery."""
         if user_input is not None:
+            name = user_input.get(CONF_NAME) or self._discovery_info.name
             return self.async_create_entry(
-                title=self._discovery_info.name,
+                title=name,
                 data={
                     CONF_MAC: self._discovery_info.address,
-                    CONF_NAME: self._discovery_info.name,
+                    CONF_NAME: name,
                 },
             )
 
-        self._set_confirm_only()
         return self.async_show_form(
             step_id="bluetooth_confirm",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_NAME, default=self._discovery_info.name): str,
+            }),
             description_placeholders={"name": self._discovery_info.name},
         )
 
@@ -81,7 +84,7 @@ class KineticoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(address, raise_on_progress=False)
             self._abort_if_unique_id_configured()
             
-            name = self._discovered_devices.get(address, f"Kinetico Softener ({address})")
+            name = user_input.get(CONF_NAME) or self._discovered_devices.get(address, f"Kinetico Softener ({address})")
 
             return self.async_create_entry(
                 title=name,
@@ -109,6 +112,7 @@ class KineticoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_MAC): vol.In(self._discovered_devices),
+                    vol.Optional(CONF_NAME, default="Kinetico Softener"): str,
                 }
             ),
         )
