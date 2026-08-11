@@ -7,5 +7,5 @@
   "documentation": "https://github.com/yourusername/ha-kinetico-powerline",
   "iot_class": "local_polling",
   "requirements": ["bleak>=0.21.0", "bleak-retry-connector>=3.4.0"],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }
