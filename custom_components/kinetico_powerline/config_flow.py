@@ -102,7 +102,7 @@ class KineticoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 
             name = discovery_info.name
             if name and any(name.startswith(p) for p in DEVICE_NAME_PREFIXES):
-                self._discovered_devices[address] = name
+                self._discovered_devices[address] = f"{name} ({address})"
 
         if not self._discovered_devices:
             return self.async_abort(reason="no_devices_found")
