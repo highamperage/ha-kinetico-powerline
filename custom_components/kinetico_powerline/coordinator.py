@@ -10,6 +10,7 @@ from typing import Any
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
+from bleak_retry_connector import establish_connection
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -71,12 +72,18 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _fetch_data(self) -> dict[str, Any]:
         """Connect and fetch the dashboard data."""
-        # Using a new client per update is safer for BLE stability in HA
-        async with BleakClient(self.ble_device, timeout=15.0) as client:
-            self._client = client
-            if not client.is_connected:
-                raise UpdateFailed("Failed to connect to device")
+        # Using bleak-retry-connector for reliable connection establishment
+        client = await establish_connection(
+            client_class=BleakClient,
+            device=self.ble_device,
+            name=self.mac,
+        )
+        if not client or not client.is_connected:
+            raise UpdateFailed("Failed to connect to device")
 
+        self._client = client
+
+        try:
             # Discover UART service
             uart = None
             for svc in UART_SERVICES:
@@ -177,3 +184,5 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
                 "dashboard": dashboard,
                 "handshake": self.handshake,
             }
+        finally:
+            await client.disconnect()
