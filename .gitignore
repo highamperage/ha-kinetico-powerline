@@ -30,3 +30,5 @@ env/
 .DS_Store
 Thumbs.db
 *.zip
+
+dont-commit/

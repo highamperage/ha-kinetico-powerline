@@ -147,8 +147,8 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
             # --- 3. Send Dashboard request ---
             self._collected_responses = []
             self._response_event.clear()
-            
-            await client.write_gatt_char(uart["tx_char"], cmd_dashboard(), response=False)
+            from .protocol import cmd_advanced_settings
+            await client.write_gatt_char(uart["tx_char"], cmd_advanced_settings(), response=False)
             
             dashboard: DashboardData | None = None
             
