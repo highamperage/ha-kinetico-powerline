@@ -1,6 +1,6 @@
 {
   "domain": "kinetico_powerline",
-  "name": "Kinetico Powerline",
+  "name": "Kinetico Powerline Pro",
   "codeowners": [],
   "config_flow": true,
   "dependencies": ["bluetooth"],

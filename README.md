@@ -1,6 +1,6 @@
-# ha-kinetico-powerline
+# Kinetico Powerline Pro
 
-Home Assistant custom integration for Kinetico Powerline series water softeners.
+Home Assistant custom integration for Kinetico Powerline Pro series water softeners.
 
 ## Status
 
@@ -45,9 +45,9 @@ This integration is built to be installed via **HACS** (Home Assistant Community
 3. Add this repository's URL (`https://github.com/highamperage/ha-kinetico-powerline`) and choose **Integration** as the category.
 4. Click **Add** and then download the integration.
 5. Restart Home Assistant.
-6. Go to **Settings > Devices & Services > Add Integration** and search for "Kinetico Powerline".
+6. Go to **Settings > Devices & Services > Add Integration** and search for "Kinetico Powerline Pro".
 
-*(Note: Ensure your Home Assistant host has a working Bluetooth adapter!)*
+*(Note: Ensure your Home Assistant host has a working Bluetooth adapter and the official **Bluetooth** integration is set up!)*
 
 ## Authentication Note
 This integration implements the Kinetico LFSR authentication protocol for firmware v4.20+. 
@@ -55,7 +55,7 @@ If you have set a custom PIN in the Kinetico app, you will need to provide it du
 
 ## Requirements
 
-- **BLE adapter**: Any Bluetooth 4.0+ adapter
+- **BLE adapter**: Any Bluetooth 4.0+ adapter (and the Home Assistant **Bluetooth** integration must be installed and configured)
 - **Python 3.10+**
 - **bleak** (BLE library, installed automatically by HA)
 

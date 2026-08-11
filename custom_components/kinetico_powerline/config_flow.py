@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
+    async_scanner_count,
 )
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.data_entry_flow import FlowResult
@@ -72,6 +73,9 @@ class KineticoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle a flow initialized by the user."""
+        if async_scanner_count(self.hass, connectable=False) == 0:
+            return self.async_abort(reason="bluetooth_not_available")
+
         if user_input is not None:
             address = user_input[CONF_MAC]
             await self.async_set_unique_id(address, raise_on_progress=False)
