@@ -57,7 +57,7 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _notification_handler(self, sender: Any, data: bytearray) -> None:
         """Handle notifications from the BLE device."""
-        _LOGGER.debug("Received BLE notification from %s: %s", sender, data.hex())
+        _LOGGER.warning("Received BLE notification from %s: %s", sender, data.hex())
         self._last_data = data
         self._collected_responses.append(data)
         self._response_event.set()
@@ -168,9 +168,10 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
                         dashboard = parsed
                         break
                     else:
-                        _LOGGER.debug("Dashboard parse failed or invalid for data: %s", data.hex())
+                        _LOGGER.warning("Dashboard parse failed or invalid for data: %s", data.hex())
                         
                 except asyncio.TimeoutError:
+                    _LOGGER.warning("Timeout waiting for dashboard response from device")
                     break
 
             # Disconnect cleanly
