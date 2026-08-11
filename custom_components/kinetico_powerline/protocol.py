@@ -280,15 +280,21 @@ class HandshakeResponse:
 
 @dataclass
 class DashboardData:
-    """Parsed dashboard state (from C0650a, packet type B)."""
+    """Parsed dashboard state (from u and v packets)."""
     is_valid: bool = False
     days_until_regen: int = 0
     days_since_regen: int = 0
     hardness_gpg: int = 0
-    capacity_remaining: int = 0       # × 1000 grains
+    capacity_remaining_gallons: int = 0
+    capacity_remaining_percent: int = 0
     is_regenerating: bool = False
     has_error: bool = False
     salt_sensor: int = 0
+    
+    # Advanced Settings config state
+    config_hardness_gpg: int = 0
+    total_capacity_grains: int = 0
+    
     config_byte_1: int = 0
     config_byte_2: int = 0
     interval: int = 0
@@ -437,56 +443,100 @@ def parse_handshake(data: bytes, length: int = 0) -> HandshakeResponse:
 # Dashboard Response Parsers
 # ---------------------------------------------------------------------------
 
-def parse_dashboard(
-    data: bytes,
-    length: int,
+def calc_salt_percent(raw: int) -> int:
+    """Calculate the salt level percentage (0-100) from the raw sensor value."""
+    dE = raw * 4
+    d9 = dE * 0.002 * 11.0
+    d10 = 100.0
+    if d9 < 9.5:
+        if d9 >= 8.91:
+            d7 = 9.5 - d9
+            d8 = 8.78
+        elif d9 >= 8.48:
+            d10 = 94.78 - ((8.91 - d9) * 30.26)
+            d7 = 0.0
+            d8 = 0.0
+        elif d9 >= 7.43:
+            d10 = 81.84 - ((8.48 - d9) * 60.47)
+            d7 = 0.0
+            d8 = 0.0
+        elif d9 >= 6.5:
+            d10 = 18.68
+            d7 = 7.43 - d9
+            d8 = 20.02
+        else:
+            d10 = 0.0
+            d7 = 0.0
+            d8 = 0.0
+        d10 -= d7 * d8
+    return int(d10)
+
+
+def parse_dashboard_packets(
+    packets: list[bytes],
     firmware_version: int,
     device_type: DeviceType = DeviceType.METERED_SOFTENER,
 ) -> Optional[DashboardData]:
     """
-    Parse a dashboard data response (packet type B).
-    Ported from C0650a.m5324A.
-
-    Expects: data[0:3] == [0x76, 0x76, 0x00] and data[19] == 0x42 ('B')
+    Parse a collection of dashboard and settings data responses.
     """
-    if len(data) < 20 or length != 20:
+    result = DashboardData()
+    found_any = False
+
+    for data in packets:
+        if len(data) != 20:
+            continue
+
+        # Advanced Settings (v,v,0, packet type 'B')
+        if data[0] == 0x76 and data[1] == 0x76 and data[2] == 0x00 and data[19] == 0x42:
+            result.config_hardness_gpg = unsigned_byte(data[5])
+            # Big Endian capacity!
+            result.total_capacity_grains = (unsigned_byte(data[6]) * 256 + unsigned_byte(data[7])) * 1000
+            result.config_byte_1 = data[11]
+            result.config_byte_2 = data[15]
+            if firmware_version >= 210:
+                result.config_byte_2 = data[12]
+                result.interval = max(1, unsigned_byte(data[13]))
+                result.feature_flags = data[14]
+            if firmware_version >= 410:
+                flags = unsigned_byte(data[16])
+                result.feature_a_active = check_bit(flags, 1)
+                result.feature_b_active = check_bit(flags, 2)
+                result.feature_c_active = check_bit(flags, 3)
+                result.feature_d_active = check_bit(flags, 4)
+                result.feature_e_active = check_bit(flags, 5)
+            found_any = True
+
+        # Dashboard 0 (u,u,0, packet type '9')
+        elif data[0] == 0x75 and data[1] == 0x75 and data[2] == 0x00 and data[19] == 0x39:
+            result.salt_sensor = calc_salt_percent(unsigned_byte(data[6]))
+            result.hardness_gpg = unsigned_byte(data[15])
+            found_any = True
+
+        # Dashboard 1 (u,u,1, packet type ':')
+        elif data[0] == 0x75 and data[1] == 0x75 and data[2] == 0x01 and data[19] == 0x3A:
+            result.days_until_regen = unsigned_byte(data[3])
+            result.days_since_regen = unsigned_byte(data[4])
+            result.capacity_remaining_percent = unsigned_byte(data[5])
+            result.has_error = (data[7] != 0)
+            if firmware_version >= 210:
+                result.is_regenerating = (data[10] & 0x08) != 0
+            else:
+                result.is_regenerating = (data[8] == 11)
+            found_any = True
+
+    if not found_any:
         return None
 
-    if data[0] != 0x76 or data[1] != 0x76:
-        return None
+    result.is_valid = True
 
-    if data[2] == 0x00 and data[19] == 0x42:  # 'B' → settings packet
-        result = DashboardData(is_valid=True)
-        result.days_until_regen = unsigned_byte(data[3])
-        result.days_since_regen = unsigned_byte(data[4])
-        result.hardness_gpg = unsigned_byte(data[5])
-        result.capacity_remaining = bytes_to_uint16_le(data[6], data[7])
-        result.is_regenerating = (data[8] == 11)  # 0x0B
-        result.has_error = (data[9] != 0)
-        result.salt_sensor = data[10]
-        result.config_byte_1 = data[11]
-        result.config_byte_2 = data[15]
+    # Calculate Gallons Remaining
+    hardness = result.hardness_gpg if result.hardness_gpg > 0 else result.config_hardness_gpg
+    if hardness > 0 and result.total_capacity_grains > 0:
+        total_gallons = result.total_capacity_grains / hardness
+        result.capacity_remaining_gallons = int(total_gallons * (result.capacity_remaining_percent / 100.0))
 
-        if firmware_version >= 210:
-            result.config_byte_2 = data[12]
-            result.interval = max(1, unsigned_byte(data[13]))
-            # bit 3 of byte 14
-            result.feature_flags = data[14]
-
-        if firmware_version >= 410:
-            flags = unsigned_byte(data[16])
-            result.feature_a_active = check_bit(flags, 1)
-            result.feature_b_active = check_bit(flags, 2)
-            result.feature_c_active = check_bit(flags, 3)
-            result.feature_d_active = check_bit(flags, 4)
-            result.feature_e_active = check_bit(flags, 5)
-
-        return result
-
-    if data[2] == 0x01:  # Tank levels packet
-        return None  # Handled by parse_tank_levels
-
-    return None
+    return result
 
 
 def parse_tank_levels(

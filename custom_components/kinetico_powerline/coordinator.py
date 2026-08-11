@@ -147,32 +147,34 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
             # --- 3. Send Dashboard request ---
             self._collected_responses = []
             self._response_event.clear()
-            from .protocol import cmd_advanced_settings
+            from .protocol import cmd_advanced_settings, cmd_dashboard, parse_dashboard_packets
+            
+            # Send Advanced Settings request first (v packet)
             await client.write_gatt_char(uart["tx_char"], cmd_advanced_settings(), response=False)
+            await asyncio.sleep(0.5)
             
-            dashboard: DashboardData | None = None
+            # Send Dashboard request (u packets)
+            await client.write_gatt_char(uart["tx_char"], cmd_dashboard(), response=False)
             
-            # Wait for responses
+            # Wait a few seconds to let all packets arrive
             for _ in range(5):
                 try:
-                    await asyncio.wait_for(self._response_event.wait(), timeout=3.0)
+                    await asyncio.wait_for(self._response_event.wait(), timeout=1.0)
                     self._response_event.clear()
-                    
-                    data = bytes(self._last_data)
-                    
-                    fw_ver = self.handshake.firmware_version if self.handshake else 0
-                    dev_type = self.handshake.device_type if self.handshake else 0
-                    
-                    parsed = parse_dashboard(data, len(data), fw_ver, dev_type)
-                    if parsed and parsed.is_valid:
-                        dashboard = parsed
-                        break
-                    else:
-                        _LOGGER.warning("Dashboard parse failed or invalid for data: %s", data.hex())
-                        
                 except asyncio.TimeoutError:
-                    _LOGGER.warning("Timeout waiting for dashboard response from device")
                     break
+            
+            fw_ver = self.handshake.firmware_version if self.handshake else 0
+            dev_type = self.handshake.device_type if self.handshake else 0
+            
+            dashboard = parse_dashboard_packets(
+                [bytes(d) for d in self._collected_responses], 
+                fw_ver, 
+                dev_type
+            )
+            
+            if dashboard is None or not dashboard.is_valid:
+                _LOGGER.warning("Dashboard parse failed or invalid for data")
 
             # Disconnect cleanly
             try:

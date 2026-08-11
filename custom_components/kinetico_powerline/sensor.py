@@ -123,7 +123,7 @@ class KineticoCapacitySensor(KineticoSensorBase):
         """Return the state of the sensor."""
         if not self.coordinator.data or not self.coordinator.data.get("dashboard"):
             return None
-        return self.coordinator.data["dashboard"].capacity_remaining * 1000
+        return self.coordinator.data["dashboard"].capacity_remaining_gallons
 
 
 class KineticoSaltSensor(KineticoSensorBase):
@@ -134,6 +134,7 @@ class KineticoSaltSensor(KineticoSensorBase):
         self._attr_name = "Salt Level"
         self._attr_unique_id = f"{coordinator.mac}_salt_level"
         self._attr_icon = "mdi:shaker-outline"
+        self._attr_native_unit_of_measurement = "%"
 
     @property
     def native_value(self) -> int | None:
