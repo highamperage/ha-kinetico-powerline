@@ -25,7 +25,6 @@ from .protocol import (
     cmd_handshake,
     cmd_dashboard,
     is_valid_handshake,
-    parse_dashboard,
     parse_handshake,
 )
 
