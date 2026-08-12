@@ -443,9 +443,14 @@ def parse_handshake(data: bytes, length: int = 0) -> HandshakeResponse:
 # Dashboard Response Parsers
 # ---------------------------------------------------------------------------
 
-def calc_salt_percent(raw: int) -> int:
+def calc_salt_percent(raw_byte: int) -> Optional[int]:
     """Calculate the salt level percentage (0-100) from the raw sensor value."""
-    dE = raw * 4
+    # 255 usually indicates no optical sensor is installed or reading is invalid
+    if raw_byte == 255:
+        return None
+        
+    # Extracted from reversing the app's `c(byte)` method
+    dE = raw_byte * 4.0
     d9 = dE * 0.002 * 11.0
     d10 = 100.0
     if d9 < 9.5:
@@ -469,7 +474,53 @@ def calc_salt_percent(raw: int) -> int:
             d7 = 0.0
             d8 = 0.0
         d10 -= d7 * d8
-    return int(d10)
+    return 100 - int(d10)
+
+
+def calc_estimated_salt_percent(data_uu1: bytes, is_commercial: bool = False) -> Optional[int]:
+    """Calculate the estimated salt percentage for units without an optical sensor."""
+    import math
+    if len(data_uu1) < 18:
+        return None
+    b13 = unsigned_byte(data_uu1[13])
+    if b13 == 255:
+        return None
+        
+    f4067s = float(b13)
+    b17 = unsigned_byte(data_uu1[17])
+    f4072x = float(b17) if is_commercial else float(b17) * 1.5
+    f8 = f4072x * f4067s # estimated lbs
+    
+    b15 = unsigned_byte(data_uu1[15])
+    b16 = unsigned_byte(data_uu1[16])
+    
+    # Tank enum mapping
+    if b15 == 16:
+        i8 = 1
+    elif b15 == 18:
+        i8 = 2
+    elif b15 == 24:
+        i8 = 3
+    elif b15 == 30:
+        i8 = 4
+    else:
+        i8 = 1
+        
+    # Max capacity lbs
+    if i8 == 2:
+        f7 = float(b16) * 10.4
+    elif i8 == 3:
+        f7 = float(b16) * 18.6
+    elif i8 == 4:
+        f7 = float(b16) * 29.55
+    else:
+        f7 = float(b16) * 8.1
+        
+    if f7 == 0.0:
+        return 0
+        
+    percentage = math.ceil((f8 / f7) * 100.0)
+    return max(0, min(100, int(percentage)))
 
 
 def parse_dashboard_packets(
@@ -487,8 +538,8 @@ def parse_dashboard_packets(
         if len(data) != 20:
             continue
 
-        # Advanced Settings (v,v,0, packet type 'B')
-        if data[0] == 0x76 and data[1] == 0x76 and data[2] == 0x00 and data[19] == 0x42:
+        # Advanced Settings (v,v,0, packet type 'v')
+        if data[0] == 0x76 and data[1] == 0x76 and data[2] == 0x00 and len(data) >= 20:
             result.config_hardness_gpg = unsigned_byte(data[5])
             # Big Endian capacity!
             result.total_capacity_grains = (unsigned_byte(data[6]) * 256 + unsigned_byte(data[7])) * 1000
@@ -509,7 +560,9 @@ def parse_dashboard_packets(
 
         # Dashboard 0 (u,u,0, packet type '9')
         elif data[0] == 0x75 and data[1] == 0x75 and data[2] == 0x00 and data[19] == 0x39:
-            result.salt_sensor = calc_salt_percent(unsigned_byte(data[6]))
+            salt_opt = calc_salt_percent(unsigned_byte(data[6]))
+            if salt_opt is not None:
+                result.salt_sensor = salt_opt
             result.hardness_gpg = unsigned_byte(data[15])
             found_any = True
 
@@ -518,6 +571,9 @@ def parse_dashboard_packets(
             result.days_since_regen = unsigned_byte(data[3])
             result.days_until_regen = unsigned_byte(data[4])
             result.capacity_remaining_percent = unsigned_byte(data[5])
+            est_salt = calc_estimated_salt_percent(data, device_type in (DeviceType.COMMERCIAL_METERED_SOFTENER, DeviceType.COMMERCIAL_BACKWASHING_FILTER))
+            if est_salt is not None and result.salt_sensor is None:
+                result.salt_sensor = est_salt
             result.has_error = (data[7] != 0)
             if firmware_version >= 210:
                 result.is_regenerating = (data[10] & 0x08) != 0
