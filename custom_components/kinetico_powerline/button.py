@@ -26,7 +26,6 @@ async def async_setup_entry(
 
     async_add_entities([
         KineticoRegenNowButton(coordinator, entry),
-        KineticoRegenNextButton(coordinator, entry),
         KineticoSyncTimeButton(coordinator, entry),
     ])
 
