@@ -287,9 +287,12 @@ class DashboardData:
     hardness_gpg: int = 0
     capacity_remaining_gallons: int = 0
     capacity_remaining_percent: int = 0
+    treated_water_today_gallons: int = 0
+    peak_flow_today_gpm: float = 0.0
     is_regenerating: bool = False
     has_error: bool = False
     salt_sensor: int = 0
+    salt_sensor_lbs: int = 0
     
     # Advanced Settings config state
     config_hardness_gpg: int = 0
@@ -476,6 +479,21 @@ def calc_salt_percent(raw_byte: int) -> Optional[int]:
         d10 -= d7 * d8
     return 100 - int(d10)
 
+def calc_estimated_salt_lbs(data_uu1: bytes, is_commercial: bool = False) -> Optional[float]:
+    """Calculate the estimated salt lbs for units without an optical sensor."""
+    if len(data_uu1) < 18:
+        return None
+    b13 = unsigned_byte(data_uu1[13])
+    if b13 == 255:
+        return None
+        
+    f4067s = float(b13)
+    b17 = unsigned_byte(data_uu1[17])
+    f4072x = float(b17) if is_commercial else float(b17) * 1.5
+    f8 = f4072x * f4067s # estimated lbs
+    return f8
+
+
 
 def calc_estimated_salt_percent(data_uu1: bytes, is_commercial: bool = False) -> Optional[int]:
     """Calculate the estimated salt percentage for units without an optical sensor."""
@@ -563,6 +581,10 @@ def parse_dashboard_packets(
             salt_opt = calc_salt_percent(unsigned_byte(data[6]))
             if salt_opt is not None:
                 result.salt_sensor = salt_opt
+            
+            result.capacity_remaining_gallons = (unsigned_byte(data[9]) * 256) + unsigned_byte(data[10])
+            result.treated_water_today_gallons = (unsigned_byte(data[11]) * 256) + unsigned_byte(data[12])
+            result.peak_flow_today_gpm = ((unsigned_byte(data[13]) * 256) + unsigned_byte(data[14])) / 100.0
             result.hardness_gpg = unsigned_byte(data[15])
             found_any = True
 
@@ -571,9 +593,16 @@ def parse_dashboard_packets(
             result.days_since_regen = unsigned_byte(data[3])
             result.days_until_regen = unsigned_byte(data[4])
             result.capacity_remaining_percent = unsigned_byte(data[5])
-            est_salt = calc_estimated_salt_percent(data, device_type in (DeviceType.COMMERCIAL_METERED_SOFTENER, DeviceType.COMMERCIAL_BACKWASHING_FILTER))
-            if est_salt is not None and result.salt_sensor is None:
-                result.salt_sensor = est_salt
+            
+            is_comm = device_type in (DeviceType.COMMERCIAL_METERED_SOFTENER, DeviceType.COMMERCIAL_BACKWASHING_FILTER)
+            est_salt_pct = calc_estimated_salt_percent(data, is_comm)
+            if est_salt_pct is not None and result.salt_sensor == 0:
+                result.salt_sensor = est_salt_pct
+                
+            est_salt_lbs = calc_estimated_salt_lbs(data, is_comm)
+            if est_salt_lbs is not None:
+                result.salt_sensor_lbs = int(est_salt_lbs)
+                
             result.has_error = (data[7] != 0)
             if firmware_version >= 210:
                 result.is_regenerating = (data[10] & 0x08) != 0
@@ -585,12 +614,6 @@ def parse_dashboard_packets(
         return None
 
     result.is_valid = True
-
-    # Calculate Gallons Remaining
-    hardness = result.hardness_gpg if result.hardness_gpg > 0 else result.config_hardness_gpg
-    if hardness > 0 and result.total_capacity_grains > 0:
-        total_gallons = result.total_capacity_grains / hardness
-        result.capacity_remaining_gallons = int(total_gallons * (result.capacity_remaining_percent / 100.0))
 
     return result
 

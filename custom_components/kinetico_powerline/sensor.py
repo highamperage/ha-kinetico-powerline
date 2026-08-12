@@ -28,6 +28,9 @@ async def async_setup_entry(
         KineticoHardnessSensor(coordinator, entry),
         KineticoCapacitySensor(coordinator, entry),
         KineticoSaltSensor(coordinator, entry),
+        KineticoSaltLbsSensor(coordinator, entry),
+        KineticoTreatedWaterTodaySensor(coordinator, entry),
+        KineticoPeakFlowTodaySensor(coordinator, entry),
     ])
 
 
@@ -142,3 +145,60 @@ class KineticoSaltSensor(KineticoSensorBase):
         if not self.coordinator.data or not self.coordinator.data.get("dashboard"):
             return None
         return self.coordinator.data["dashboard"].salt_sensor
+
+
+class KineticoSaltLbsSensor(KineticoSensorBase):
+    """Salt level lbs sensor."""
+    
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry)
+        self._attr_name = "Salt Level LBS"
+        self._attr_unique_id = f"{coordinator.mac}_salt_level_lbs"
+        self._attr_icon = "mdi:shaker-outline"
+        self._attr_native_unit_of_measurement = "lbs"
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the state of the sensor."""
+        if not self.coordinator.data or not self.coordinator.data.get("dashboard"):
+            return None
+        return self.coordinator.data["dashboard"].salt_sensor_lbs
+
+
+class KineticoTreatedWaterTodaySensor(KineticoSensorBase):
+    """Treated water today sensor."""
+    
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry)
+        self._attr_name = "Treated Water Today"
+        self._attr_unique_id = f"{coordinator.mac}_treated_water_today"
+        self._attr_device_class = SensorDeviceClass.WATER
+        self._attr_native_unit_of_measurement = "gal"
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the state of the sensor."""
+        if not self.coordinator.data or not self.coordinator.data.get("dashboard"):
+            return None
+        return self.coordinator.data["dashboard"].treated_water_today_gallons
+
+
+class KineticoPeakFlowTodaySensor(KineticoSensorBase):
+    """Peak flow today sensor."""
+    
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry)
+        self._attr_name = "Peak Flow Today"
+        self._attr_unique_id = f"{coordinator.mac}_peak_flow_today"
+        self._attr_native_unit_of_measurement = "GPM"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:water-pump"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        if not self.coordinator.data or not self.coordinator.data.get("dashboard"):
+            return None
+        return self.coordinator.data["dashboard"].peak_flow_today_gpm
+
