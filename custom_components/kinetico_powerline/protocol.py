@@ -615,6 +615,13 @@ def parse_dashboard_packets(
 
     result.is_valid = True
 
+    # Calculate Gallons Remaining as fallback if reading from packet failed
+    if result.capacity_remaining_gallons == 0:
+        hardness = result.hardness_gpg if result.hardness_gpg > 0 else result.config_hardness_gpg
+        if hardness > 0 and result.total_capacity_grains > 0:
+            total_gallons = result.total_capacity_grains / hardness
+            result.capacity_remaining_gallons = int(total_gallons * (result.capacity_remaining_percent / 100.0))
+
     return result
 
 
