@@ -15,7 +15,7 @@ from bleak_retry_connector import establish_connection
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, SUSPICIOUS_ZERO_THRESHOLD
 from .protocol import (
     UART_SERVICES,
     DashboardData,
@@ -189,6 +189,33 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
 
             if not dashboard:
                 raise UpdateFailed("Did not receive dashboard data from device")
+
+            # --- Validation Gate ---
+            # Check if majority of meaningful numeric sensors are zero.
+            # This is a known issue where sync briefly returns all/mostly zeros.
+            numeric_fields = [
+                dashboard.days_until_regen,
+                dashboard.days_since_regen,
+                dashboard.hardness_gpg,
+                dashboard.capacity_remaining,
+                dashboard.salt_sensor,
+            ]
+            zero_count = sum(1 for field in numeric_fields if field == 0)
+
+            if zero_count >= SUSPICIOUS_ZERO_THRESHOLD:
+                if self.data:
+                    _LOGGER.warning(
+                        "Suspicious update detected: %d/%d numeric fields are zero. "
+                        "Preserving last known good state.",
+                        zero_count, len(numeric_fields)
+                    )
+                    return self.data
+                else:
+                    _LOGGER.warning(
+                        "Suspicious update detected on initial fetch: %d/%d numeric fields are zero. "
+                        "Accepting anyway as there is no previous state.",
+                        zero_count, len(numeric_fields)
+                    )
 
             # Return the collected data dictionary
             return {
