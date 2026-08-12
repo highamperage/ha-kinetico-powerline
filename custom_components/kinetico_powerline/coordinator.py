@@ -191,30 +191,31 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed("Did not receive dashboard data from device")
 
             # --- Validation Gate ---
-            # Check if majority of meaningful numeric sensors are zero.
+            # Check if majority of meaningful independent numeric indicators are zero.
             # This is a known issue where sync briefly returns all/mostly zeros.
-            numeric_fields = [
-                dashboard.days_until_regen,
-                dashboard.days_since_regen,
-                dashboard.hardness_gpg,
-                dashboard.capacity_remaining,
-                dashboard.salt_sensor,
+            # Capacity and salt represent the same underlying resource, so they
+            # combine into a single true/false signal for this test.
+            independent_checks = [
+                dashboard.days_until_regen == 0,
+                dashboard.days_since_regen == 0,
+                dashboard.hardness_gpg == 0,
+                (dashboard.capacity_remaining_gallons == 0 and dashboard.salt_sensor == 0),
             ]
-            zero_count = sum(1 for field in numeric_fields if field == 0)
+            zero_count = sum(1 for check in independent_checks if check)
 
             if zero_count >= SUSPICIOUS_ZERO_THRESHOLD:
                 if self.data:
                     _LOGGER.warning(
-                        "Suspicious update detected: %d/%d numeric fields are zero. "
+                        "Suspicious update detected: %d/%d independent checks are zero. "
                         "Preserving last known good state.",
-                        zero_count, len(numeric_fields)
+                        zero_count, len(independent_checks)
                     )
                     return self.data
                 else:
                     _LOGGER.warning(
-                        "Suspicious update detected on initial fetch: %d/%d numeric fields are zero. "
+                        "Suspicious update detected on initial fetch: %d/%d independent checks are zero. "
                         "Accepting anyway as there is no previous state.",
-                        zero_count, len(numeric_fields)
+                        zero_count, len(independent_checks)
                     )
 
             # Return the collected data dictionary
