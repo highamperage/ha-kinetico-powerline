@@ -62,3 +62,7 @@ If you have set a custom PIN in the Kinetico app, you will need to provide it du
 ## License
 
 MIT
+
+---
+
+*Disclaimer: AI was used to assist in building this project.*
