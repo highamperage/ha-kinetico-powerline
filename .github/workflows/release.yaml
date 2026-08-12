@@ -23,3 +23,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: custom_components/kinetico_powerline/kinetico_powerline.zip
+
+      - name: Delete older releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for tag in $(gh release list -L 100 --json tagName -q '.[].tagName'); do
+            if [ "$tag" != "${{ github.event.release.tag_name }}" ]; then
+              gh release delete "$tag" --yes
+            fi
+          done
