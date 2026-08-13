@@ -839,18 +839,24 @@ def cmd_set_salt_level(level: int) -> bytes:
 
 
 def cmd_regen_now() -> bytes:
-    """Trigger an immediate regeneration cycle."""
+    """
+    Trigger an immediate regeneration cycle.
+    (Confirmed against the official Kinetico Powerline PRO app byte layout)
+    """
     pkt = _make_packet(CommandScreen.DASHBOARD)
     pkt[13] = 0x52  # 'R'
-    pkt[14] = 0x54  # 'T' — trigger now
+    pkt[14] = 0x4E  # 'N' — trigger now
     return bytes(pkt)
 
 
 def cmd_regen_next() -> bytes:
-    """Schedule regeneration for the next scheduled time."""
+    """
+    Schedule regeneration for the next scheduled time.
+    (Confirmed against the official Kinetico Powerline PRO app byte layout)
+    """
     pkt = _make_packet(CommandScreen.DASHBOARD)
     pkt[13] = 0x52  # 'R'
-    pkt[14] = 0x4E  # 'N' — next scheduled
+    pkt[14] = 0x54  # 'T' — next scheduled
     return bytes(pkt)
 
 
