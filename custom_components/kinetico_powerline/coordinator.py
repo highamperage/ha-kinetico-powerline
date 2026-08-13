@@ -63,12 +63,18 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""
-        try:
-            return await self._fetch_data()
-        except BleakError as err:
-            raise UpdateFailed(f"BLE Error communicating with device: {err}") from err
-        except Exception as err:
-            raise UpdateFailed(f"Unexpected error communicating with device: {err}") from err
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await self._fetch_data()
+            except BleakError as err:
+                if attempt < max_attempts:
+                    _LOGGER.info("Retry %d/%d after transient BLE error: %s", attempt, max_attempts, err)
+                    await asyncio.sleep(1.5)
+                else:
+                    raise UpdateFailed(f"BLE Error communicating with device after {max_attempts} attempts: {err}") from err
+            except Exception as err:
+                raise UpdateFailed(f"Unexpected error communicating with device: {err}") from err
 
     async def _fetch_data(self) -> dict[str, Any]:
         """Connect and fetch the dashboard data."""
