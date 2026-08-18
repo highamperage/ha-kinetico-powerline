@@ -550,7 +550,9 @@ def parse_dashboard_packets(
     Parse a collection of dashboard and settings data responses.
     """
     result = DashboardData()
-    found_any = False
+    seen_vv = False
+    seen_uu0 = False
+    seen_uu1 = False
 
     for data in packets:
         if len(data) != 20:
@@ -574,7 +576,7 @@ def parse_dashboard_packets(
                 result.feature_c_active = check_bit(flags, 3)
                 result.feature_d_active = check_bit(flags, 4)
                 result.feature_e_active = check_bit(flags, 5)
-            found_any = True
+            seen_vv = True
 
         # Dashboard 0 (u,u,0, packet type '9')
         elif data[0] == 0x75 and data[1] == 0x75 and data[2] == 0x00 and data[19] == 0x39:
@@ -586,7 +588,7 @@ def parse_dashboard_packets(
             result.treated_water_today_gallons = (unsigned_byte(data[11]) * 256) + unsigned_byte(data[12])
             result.peak_flow_today_gpm = ((unsigned_byte(data[13]) * 256) + unsigned_byte(data[14])) / 100.0
             result.hardness_gpg = unsigned_byte(data[15])
-            found_any = True
+            seen_uu0 = True
 
         # Dashboard 1 (u,u,1, packet type ':')
         elif data[0] == 0x75 and data[1] == 0x75 and data[2] == 0x01 and data[19] == 0x3A:
@@ -608,9 +610,9 @@ def parse_dashboard_packets(
                 result.is_regenerating = (data[10] & 0x08) != 0
             else:
                 result.is_regenerating = (data[8] == 11)
-            found_any = True
+            seen_uu1 = True
 
-    if not found_any:
+    if not (seen_vv and seen_uu0 and seen_uu1):
         return None
 
     result.is_valid = True

@@ -38,10 +38,10 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
         self.ble_device = ble_device
         self.mac = ble_device.address
         self.handshake: HandshakeResponse | None = None
-        
+
         self._client: BleakClient | None = None
         self._uart: dict[str, str] | None = None
-        
+
         # State used during update loops
         self._response_event = asyncio.Event()
         self._last_data: bytearray | None = None
@@ -56,10 +56,71 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _notification_handler(self, sender: Any, data: bytearray) -> None:
         """Handle notifications from the BLE device."""
-        _LOGGER.warning("Received BLE notification from %s: %s", sender, data.hex())
+        _LOGGER.debug("Received BLE notification from %s (length: %d)", sender, len(data))
         self._last_data = data
         self._collected_responses.append(data)
         self._response_event.set()
+
+    async def _wait_for_handshake_packet(self, timeout: float = 3.0) -> bytes | None:
+        """Wait for and return a handshake/auth 'tt' packet."""
+        start_time = time.time()
+        processed = 0
+        while time.time() - start_time < timeout:
+            while processed < len(self._collected_responses):
+                data = self._collected_responses[processed]
+                processed += 1
+                if len(data) == 20 and data[0] == 0x74 and data[1] == 0x74:
+                    return bytes(data)
+
+            remaining = timeout - (time.time() - start_time)
+            if remaining <= 0:
+                break
+            try:
+                await asyncio.wait_for(self._response_event.wait(), timeout=remaining)
+                self._response_event.clear()
+            except asyncio.TimeoutError:
+                break
+        return None
+
+    async def _wait_for_dashboard_packets(self, timeout: float = 5.0) -> list[bytes]:
+        """Wait for dashboard packets (vv, uu0, uu1), rejecting stale packets."""
+        start_time = time.time()
+        processed = 0
+        dashboard_packets = []
+        seen_vv = False
+        seen_uu0 = False
+        seen_uu1 = False
+
+        while time.time() - start_time < timeout:
+            while processed < len(self._collected_responses):
+                data = self._collected_responses[processed]
+                processed += 1
+                if len(data) == 20:
+                    # Ignore stale handshake packets
+                    if data[0] == 0x74 and data[1] == 0x74:
+                        continue
+                    if data[0] == 0x76 and data[1] == 0x76 and data[2] == 0x00:
+                        dashboard_packets.append(bytes(data))
+                        seen_vv = True
+                    elif data[0] == 0x75 and data[1] == 0x75 and data[2] == 0x00 and data[19] == 0x39:
+                        dashboard_packets.append(bytes(data))
+                        seen_uu0 = True
+                    elif data[0] == 0x75 and data[1] == 0x75 and data[2] == 0x01 and data[19] == 0x3A:
+                        dashboard_packets.append(bytes(data))
+                        seen_uu1 = True
+
+            if seen_vv and seen_uu0 and seen_uu1:
+                break
+
+            remaining = timeout - (time.time() - start_time)
+            if remaining <= 0:
+                break
+            try:
+                await asyncio.wait_for(self._response_event.wait(), timeout=remaining)
+                self._response_event.clear()
+            except asyncio.TimeoutError:
+                break
+        return dashboard_packets
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""
@@ -111,81 +172,79 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
             # Start notifications
             await client.start_notify(uart["rx_char"], self._notification_handler)
             await asyncio.sleep(0.5)
-            
+
             # --- 1. Handshake ---
+            self.handshake = None
+            self._last_data = None
             self._collected_responses = []
             self._response_event.clear()
+
             await client.write_gatt_char(uart["tx_char"], cmd_handshake(), response=False)
-            
-            try:
-                await asyncio.wait_for(self._response_event.wait(), timeout=3.0)
-                data = bytes(self._last_data)
+
+            data = await self._wait_for_handshake_packet(timeout=3.0)
+            if data:
                 if is_valid_handshake(data):
                     self.handshake = parse_handshake(data, len(data))
-            except asyncio.TimeoutError:
-                pass
-                
+            else:
+                raise UpdateFailed("Timeout waiting for handshake response")
+
             if not self.handshake or not self.handshake.is_valid:
-                raise UpdateFailed("Failed to receive a valid handshake from device")
-                
+                raise UpdateFailed("Failed to parse a valid handshake from device")
+
             # --- 2. Authentication (if required) ---
             if self.handshake.firmware_version >= 420 and self.handshake.auth_status == AuthStatus.NOT_AUTHENTICATED:
+                self._collected_responses = []
                 self._response_event.clear()
                 # Use default PIN 1234
                 if self.handshake.pin_required:
                     auth_cmd = cmd_auth(counter=self.handshake.connection_counter, pin=1234, fw_420_plus=True)
                 else:
                     auth_cmd = cmd_auth_pa(counter=self.handshake.connection_counter, pin=1234)
-                    
+
                 await client.write_gatt_char(uart["tx_char"], auth_cmd, response=False)
-                
-                try:
-                    await asyncio.wait_for(self._response_event.wait(), timeout=3.0)
-                    data = bytes(self._last_data)
-                    if is_valid_handshake(data):
-                        auth_hs = parse_handshake(data, len(data))
-                        if auth_hs.auth_status != AuthStatus.AUTHENTICATED:
-                            raise UpdateFailed("Authentication failed! (Invalid PIN)")
-                except asyncio.TimeoutError:
+
+                data = await self._wait_for_handshake_packet(timeout=3.0)
+                if not data:
                     raise UpdateFailed("Timeout waiting for authentication response")
+
+                if is_valid_handshake(data):
+                    auth_hs = parse_handshake(data, len(data))
+                    if auth_hs.auth_status != AuthStatus.AUTHENTICATED:
+                        raise UpdateFailed("Authentication rejected by device (Invalid PIN)")
+                else:
+                    raise UpdateFailed("Invalid authentication response packet")
 
             # --- 3. Send Dashboard request ---
             self._collected_responses = []
             self._response_event.clear()
             from .protocol import cmd_advanced_settings, cmd_dashboard, parse_dashboard_packets
-            
+
             # Send Advanced Settings request first (v packet)
             await client.write_gatt_char(uart["tx_char"], cmd_advanced_settings(), response=False)
-            
+
             # Wait briefly for settings response
             try:
                 await asyncio.wait_for(self._response_event.wait(), timeout=1.0)
-                self._response_event.clear()
             except asyncio.TimeoutError:
                 _LOGGER.debug("Timeout waiting for advanced settings response")
-            
+
             # Send Dashboard request (u packets)
             await client.write_gatt_char(uart["tx_char"], cmd_dashboard(), response=False)
-            
-            # Wait a few seconds to let all packets arrive
-            for _ in range(5):
-                try:
-                    await asyncio.wait_for(self._response_event.wait(), timeout=1.0)
-                    self._response_event.clear()
-                except asyncio.TimeoutError:
-                    break
-            
+
+            # Collect dashboard packets using new helper
+            dashboard_packets = await self._wait_for_dashboard_packets(timeout=5.0)
+
             fw_ver = self.handshake.firmware_version if self.handshake else 0
             dev_type = self.handshake.device_type if self.handshake else 0
-            
+
             dashboard = parse_dashboard_packets(
-                [bytes(d) for d in self._collected_responses], 
-                fw_ver, 
+                dashboard_packets,
+                fw_ver,
                 dev_type
             )
-            
+
             if dashboard is None or not dashboard.is_valid:
-                _LOGGER.warning("Dashboard parse failed or invalid for data")
+                _LOGGER.warning("Incomplete dashboard transaction or parsing failed")
 
             # Disconnect cleanly
             try:
@@ -194,7 +253,7 @@ class KineticoDataUpdateCoordinator(DataUpdateCoordinator):
                 pass
 
             if not dashboard:
-                raise UpdateFailed("Did not receive dashboard data from device")
+                raise UpdateFailed("Incomplete dashboard transaction")
 
             # --- Validation Gate ---
             # Check if majority of meaningful independent numeric indicators are zero.
